@@ -2656,7 +2656,523 @@ https://docs.python.org/3/library/urllib.parse.html#url-quoting
 
 <p>十五构造requests<br>
     具体请参考以下链接：<br>
-    https://2.python-requests.org//en/master/user/quickstart/  </p>
+    https://2.python-requests.org//en/master/user/quickstart/<br>
+十六JSON API<br>
+    关于JSON的概念可以参考以下链接或者自行百度：<br>
+    http://www.json.org/<br>
+    这里举一个示例：<br>
+    进入python命令控制台录入以下代码：<br>
+    '''<br>
+    import requests<br>
+    r=requests.get('http://swapi.co/api/people/1/')<br>
+    r.json()<br>
+    r.content<br>
+    r.headers<br>
+    '''<br>
+    可以从这次请求的返回的头信息中看到Content-Type为application/json，即返回的数据类型为JSON，访问r.content可以看到该JSON格式的数据，调用r.json()方法可以将该JSON数据转换为python字典。<br>
+    当返回的数据为非JSON格式，调用response.json()会抛出JSONDecodeError<br>
+    要提取JSON中的信息，只需将其转换为python字典，然后采用字典的方式去访问其值，例如：<br>
+    r.json().get('name')<br>
+    输出为Luke Skywalker<br>
+十七The bookmark server：<br>
+    以下是bookmark server的示例如代码BookmarkServer.py:
+    '''<br>
+    #!/usr/bin/env python3
+    #
+    # A <em>bookmark server</em> or URI shortener.</p>
+<div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">http.server</span>
+<span class="kn">import</span> <span class="nn">requests</span>
+<span class="kn">from</span> <span class="nn">urllib.parse</span> <span class="kn">import</span> <span class="n">unquote</span><span class="p">,</span> <span class="n">parse_qs</span>
+
+<span class="n">memory</span> <span class="o">=</span> <span class="p">{}</span>
+
+<span class="n">form</span> <span class="o">=</span> <span class="s1">&#39;&#39;&#39;&amp;lt;!DOCTYPE html&amp;gt;</span>
+<span class="s1">&amp;lt;title&amp;gt;Bookmark Server&amp;lt;/title&amp;gt;</span>
+<span class="s1">&amp;lt;form method=&quot;POST&quot;&amp;gt;</span>
+<span class="s1">    &amp;lt;label&amp;gt;Long URI:</span>
+<span class="s1">        &amp;lt;input name=&quot;longuri&quot;&amp;gt;</span>
+<span class="s1">    &amp;lt;/label&amp;gt;</span>
+<span class="s1">&amp;lt;br&amp;gt;</span>
+<span class="s1">&amp;lt;label&amp;gt;Short name:</span>
+<span class="s1">    &amp;lt;input name=&quot;shortname&quot;&amp;gt;</span>
+<span class="s1">&amp;lt;/label&amp;gt;</span>
+<span class="s1">&amp;lt;br&amp;gt;</span>
+<span class="s1">    &amp;lt;button type=&quot;submit&quot;&amp;gt;Save it!&amp;lt;/button&amp;gt;</span>
+<span class="s1">&amp;lt;/form&amp;gt;</span>
+<span class="s1">&amp;lt;p&amp;gt;URIs I know about:</span>
+<span class="s1">&amp;lt;pre&amp;gt;</span>
+<span class="s1">{}</span>
+<span class="s1">&amp;lt;/pre&amp;gt;</span>
+<span class="s1">&#39;&#39;&#39;</span>
+
+
+<span class="k">def</span> <span class="nf">CheckURI</span><span class="p">(</span><span class="n">uri</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">):</span>
+<span class="sd">&#39;&#39;&#39;Check whether this URI is reachable, i.e. does it return a 200 OK?</span>
+
+<span class="sd">This function returns True if a GET request to uri returns a 200 OK, and</span>
+<span class="sd">False if that GET request returns any other response, or doesn&#39;t return</span>
+<span class="sd">(i.e. times out).</span>
+<span class="sd">&#39;&#39;&#39;</span>
+<span class="k">try</span><span class="p">:</span>\\<span class="o">***</span>
+    <span class="n">r</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">uri</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">)</span>\\<span class="o">***</span>
+    <span class="c1"># If the GET request returns, was it a 200 OK?</span>
+    <span class="k">return</span> <span class="n">r</span><span class="o">.</span><span class="n">status_code</span> <span class="o">==</span> <span class="mi">200</span>\\<span class="o">***</span>
+<span class="k">except</span> <span class="n">requests</span><span class="o">.</span><span class="n">RequestException</span><span class="p">:</span>\\<span class="o">***</span>
+    <span class="c1"># If the GET request raised an exception, it&#39;s not OK.\\***</span>
+    <span class="k">return</span> <span class="bp">False</span>\\<span class="o">***</span>
+
+
+<span class="k">class</span> <span class="nc">Shortener</span><span class="p">(</span><span class="n">http</span><span class="o">.</span><span class="n">server</span><span class="o">.</span><span class="n">BaseHTTPRequestHandler</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">do_GET</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="c1"># A GET request will either be for / (the root path) or for /some-name.</span>
+    <span class="c1"># Strip off the / and we have either empty string or a name.</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">unquote</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>\\<span class="o">***</span>
+
+    <span class="k">if</span> <span class="n">name</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">memory</span><span class="p">:</span>
+            <span class="c1"># We know that name! Send a redirect to it.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">send_response</span><span class="p">(</span><span class="mi">303</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">send_header</span><span class="p">(</span><span class="s1">&#39;Location&#39;</span><span class="p">,</span> <span class="n">memory</span><span class="p">[</span><span class="n">name</span><span class="p">])</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">end_headers</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># We don&#39;t know that name! Send a 404 error.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">send_response</span><span class="p">(</span><span class="mi">404</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">send_header</span><span class="p">(</span><span class="s1">&#39;Content-type&#39;</span><span class="p">,</span> <span class="s1">&#39;text/plain; charset=utf-8&#39;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">end_headers</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">wfile</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s2">&quot;I don&#39;t know &#39;{}&#39;.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="p">)</span><span class="o">.</span><span class="n">encode</span><span class="p">())</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="c1"># Root path. Send the form.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_response</span><span class="p">(</span><span class="mi">200</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_header</span><span class="p">(</span><span class="s1">&#39;Content-type&#39;</span><span class="p">,</span> <span class="s1">&#39;text/html&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">end_headers</span><span class="p">()</span>
+        <span class="c1"># List the known associations in the form.</span>
+        <span class="n">known</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="s2">&quot;{} : {}&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">memory</span><span class="p">[</span><span class="n">key</span><span class="p">])</span>
+                          <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">memory</span><span class="o">.</span><span class="n">keys</span><span class="p">()))</span>\\<span class="o">***</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">wfile</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">known</span><span class="p">)</span><span class="o">.</span><span class="n">encode</span><span class="p">())</span>
+
+<span class="k">def</span> <span class="nf">do_POST</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="c1"># Decode the form data.</span>
+    <span class="n">length</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">headers</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;Content-length&#39;</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+    <span class="n">body</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rfile</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">length</span><span class="p">)</span><span class="o">.</span><span class="n">decode</span><span class="p">()</span>
+    <span class="n">params</span> <span class="o">=</span> <span class="n">parse_qs</span><span class="p">(</span><span class="n">body</span><span class="p">)</span>
+
+    <span class="c1"># Check that the user submitted the form fields.</span>
+    <span class="k">if</span> <span class="s2">&quot;longuri&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">params</span> <span class="ow">or</span> <span class="s2">&quot;shortname&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">params</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_response</span><span class="p">(</span><span class="mi">400</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_header</span><span class="p">(</span><span class="s1">&#39;Content-type&#39;</span><span class="p">,</span> <span class="s1">&#39;text/plain; charset=utf-8&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">end_headers</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">wfile</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s2">&quot;Missing form fields!&quot;</span><span class="o">.</span><span class="n">encode</span><span class="p">())</span>
+        <span class="k">return</span>\\<span class="o">***</span>
+
+    <span class="n">longuri</span> <span class="o">=</span> <span class="n">params</span><span class="p">[</span><span class="s2">&quot;longuri&quot;</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">shortname</span> <span class="o">=</span> <span class="n">params</span><span class="p">[</span><span class="s2">&quot;shortname&quot;</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="n">CheckURI</span><span class="p">(</span><span class="n">longuri</span><span class="p">):</span>
+        <span class="c1"># This URI is good!  Remember it under the specified name.</span>
+        <span class="n">memory</span><span class="p">[</span><span class="n">shortname</span><span class="p">]</span> <span class="o">=</span> <span class="n">longuri</span>
+
+        <span class="c1"># Serve a redirect to the form.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_response</span><span class="p">(</span><span class="mi">303</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_header</span><span class="p">(</span><span class="s1">&#39;Location&#39;</span><span class="p">,</span> <span class="s1">&#39;/&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">end_headers</span><span class="p">()</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="c1"># Didn&#39;t successfully fetch the long URI.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_response</span><span class="p">(</span><span class="mi">404</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_header</span><span class="p">(</span><span class="s1">&#39;Content-type&#39;</span><span class="p">,</span> <span class="s1">&#39;text/plain; charset=utf-8&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">end_headers</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">wfile</span><span class="o">.</span><span class="n">write</span><span class="p">(</span>
+            <span class="s2">&quot;Couldn&#39;t fetch URI &#39;{}&#39;. Sorry!&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">longuri</span><span class="p">)</span><span class="o">.</span><span class="n">encode</span><span class="p">())</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
+    <span class="n">server_address</span> <span class="o">=</span> <span class="p">(</span><span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="mi">8000</span><span class="p">)</span>
+    <span class="n">httpd</span> <span class="o">=</span> <span class="n">http</span><span class="o">.</span><span class="n">server</span><span class="o">.</span><span class="n">HTTPServer</span><span class="p">(</span><span class="n">server_address</span><span class="p">,</span> <span class="n">Shortener</span><span class="p">)</span>
+    <span class="n">httpd</span><span class="o">.</span><span class="n">serve_forever</span><span class="p">()</span>
+
+<span class="s1">&#39;&#39;&#39;</span>
+<span class="s1">注意以上示例代码中，以</span><span class="se">\\</span><span class="s1">***结束的部分。</span>
+</pre></div>
+
+
+<p>十八Deploying to a hosting service<br>
+    这里以发布到Heroku为例，以BookmarkServer.py作为要发布的程序，以下是发布的流程：
+    注：关于Heroku可以参考以下链接：<br>
+    https://heroku.com
+    1.创建Git仓库：<br>
+    为发布程序创建一个目录，将BookmarkServer.py拷贝到该目录，在命令模式下进入该目录，输入以下git命令：<br>
+    git init<br>
+    git add BookmarkServer.py<br>
+    git commit -m "Checking in my bookmark server!"<br>
+    2.创建Heroku账户：<br>
+    进入以下链接，按照流程创建Heroku账户：<br>
+    https://signup.heroku.com/dc<br>
+    3.下载Heroku CLI:<br>
+    https://devcenter.heroku.com/articles/heroku-cli<br>
+    点击上面的链接下载CLI，安装好以后在命令行运行heroku login进入用户名及密码认证，认证完成后相关认证信息会保存在.netrc隐藏文件中。<br>
+    4.创建配置文件：<br>
+    在Heroku上发布应用需要一些配置文件，这些配置文件告诉服务器如何去运行所要发布的应用，这些配置文件都是一些text文件，这里就以发布此次的BookmarkServer.py所需要的配置文件为例：<br>
+    (1).runtime.txt用于告诉Heroku需要什么版本的Python，至2017年以后，Heroku目前支持的版本为Python3，在这里runtime.txt需要包含的版本信息为python-3.6.0<br>
+    关于runtime.txt配置文件的详细信息可以参考以下链接：<br>
+    https://devcenter.heroku.com/articles/python-runtimes<br>
+    (2).requirements.txt用于指定应用需要的除标准库以外的包依赖，这里主要依赖的包为requests，这里文件包含的依赖关系为requests&gt;=2.12<br>
+    (3).Procfile.txt主要用于指定启动应用的命令行，该命令行可以支持运行多服务器，这里以启动单服务器为例，包含以下命令：web: python BookmarkServer.py<br>
+    关于Profile.txt配置文件的详细信息可以参考以下链接：<br>
+    https://devcenter.heroku.com/articles/procfile<br>
+    5.配置Heroku端口：<br>
+    Heroku服务器端运行了很多应用，有时候我们没有办法知道指定的端口在Heroku服务器端是否被占用，这里我们需要获得服务器端可用的端口，方法是通过系统环境变量'PORT'去获取，修改BookmarkServer.py程序中的if <strong>name</strong>=='<strong>main</strong>'函数：<br>
+    if <strong>name</strong>=='<strong>main</strong>':<br>
+        port=int(os.environ.get('PORT',8000)) #Use PORT if it's there.<br>
+        server_address=('',port)<br>
+        httpd=http.server.HTTPServer(server_address,Shortener)<br>
+        httpd.serve_forever()<br>
+    os.environ模块需要额外导入，需要在程序开始部分导入该模块：<br>
+    import os<br>
+    修改完后保存后在git中提交：<br>
+    git add BookmarkServer.py<br>
+    git commit -m "Use PORT from environment."<br>
+    6.创建发布应用：<br>
+    在本地应用目录下为应用创建名称：<br>
+    heroku create your-app-name
+    完成后将应用推送至heroku服务器：<br>
+    git push heroku master<br>
+    完成后即可在访问heroku端的服务，访问的URI链接为：<br>
+    https://your-app-name.herokuapp.com<br>
+    这里的your-app-name为需要命名的应用名称，例如：<br>
+    jack-shao<br>
+十九查看log消息：<br>
+    当服务器端出现运行错误的情况，这个时候就需要访问log消息，可以通过访问以下链接来查看log消息：<br>
+    https://dashboard.heroku.com/apps/your-app-name/logs<br>
+    其中your-app-name为自己创建的应用名，例如jack-shao<br>
+二十Handing more requests:<br>
+    访问在heroku中发布的BookmarkServer.py应用(https://jack-shao.herokuapp.com)，当Long URI中录入的是BookmarkServer.py应用本身的URI时，点击保存将出错，其原因是http.server一次只能保持一个连接，无法处理并发，要使其能够处理并发，需要多继承，为http.server增加一些新的能力，修改以上BookmarkServer.py代码如下：<br>
+    import threading<br>
+    from socketserver import ThreadingMinIn  </p>
+<div class="highlight"><pre><span></span><span class="kr">class</span> <span class="nx">ThreadHTTPServer</span><span class="p">(</span><span class="nx">ThreadingMixIn</span><span class="p">,</span><span class="nx">http</span><span class="p">.</span><span class="nx">server</span><span class="p">.</span><span class="nx">HTTPServer</span><span class="p">)</span><span class="o">:</span>  
+    <span class="s2">&quot;This is an HTTPServer that supports thread-based concurrency.&quot;</span>  
+<span class="err">修改</span><span class="k">if</span> <span class="nx">__name__</span><span class="o">==</span><span class="s1">&#39;__main__&#39;</span><span class="err">函数：</span>  
+<span class="k">if</span> <span class="nx">__name__</span><span class="o">==</span><span class="s1">&#39;__main__&#39;</span><span class="o">:</span>  
+    <span class="nx">port</span><span class="o">=</span><span class="kr">int</span><span class="p">(</span><span class="nx">os</span><span class="p">.</span><span class="nx">environ</span><span class="p">.</span><span class="nx">get</span><span class="p">(</span><span class="s1">&#39;PORT&#39;</span><span class="p">,</span><span class="mi">8000</span><span class="p">))</span>  
+    <span class="nx">server_address</span><span class="o">=</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="p">,</span><span class="nx">port</span><span class="p">)</span>  
+    <span class="nx">httpd</span><span class="o">=</span><span class="nx">ThreadHTTPServer</span><span class="p">(</span><span class="nx">server_address</span><span class="p">,</span><span class="nx">Shortener</span><span class="p">)</span>  
+    <span class="nx">httpd</span><span class="p">.</span><span class="nx">serve_forever</span><span class="p">()</span>  
+<span class="err">修改后保存，在</span><span class="nx">git中重新提交并推送后即可实现并发访问</span><span class="err">。</span>
+</pre></div>
+
+
+<p>二一真实的服务器：<br>
+    关于这部分内容，主要需求熟悉以下概念：<br>
+    1.常见的专业服务器程序：<br>
+    Apache,Nginx,IIS<br>
+    2.路由和负载均衡<br>
+    3.高并发<br>
+    4.高速缓存<br>
+    5.容量<br>
+    这里不对每个概念展开，不清楚的可以自行百度，其中缓存部分和HTTP浏览器缓存相关的内容可以参考以下链接：<br>
+    https://developers.google.com/web/fundamentals/performance/optimizing-content-efficiency/http-caching <br>
+二二Cookies<br>
+    关于Cookies的概念就不在这里累述了，这里只需要清楚Cookies是由服务器设置，由浏览器保存，并且在随后的查询中由浏览器再回传至服务器的一种机制，Cookie将被应用于HTTP的一些高级特性，例如sessions或login等。<br>
+    1.Cookie的创建：<br>
+    首先客户端向服务端发送request请求，服务端回传一个包含Set-Cookie组件header的response，这个header包含三方面的内容:  cookie name,a value,and some attributes.随后所有的查询都将包含这些信息的cookie回传至服务端，服务端可以更新这些cookie。<br>
+    2.在本地浏览器查看cookies:<br>
+    方式可以自行百度，这里需要说明的是，在本地修改cookie可能导致服务器端的一些预期行为受到影响，我们以本地的一个cookie示例来说明其包含的信息：<br>
+    Name:    _ga<br>
+    Content: GA1.2.257731326.1479515271<br>
+    Domain:  .edhrec.com<br>
+    Path:    /<br>
+    Send for: Any kind of connection<br>
+    Accessible to script:  yes<br>
+    Created:  Friday,November 18,2016 at 4:27:50 PM<br>
+    Expires:  Sunday,November 18,2018 at 4:27:50 PM  </p>
+<div class="highlight"><pre><span></span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="err">头两项</span><span class="nx">Name和Content</span><span class="err">，也被称为</span><span class="nx">cookie的key和value</span><span class="err">，其中</span><span class="nx">key的命名由一些特殊的规则约束</span><span class="err">，例如不能查询空格；</span><span class="nx">value是表示cookie的一些真实的数据</span><span class="err">，例如表示已经登陆用户的唯一令牌</span>  
+<span class="p">(</span><span class="mi">2</span><span class="p">)</span><span class="err">后面两项是</span><span class="nx">Domain和path</span><span class="err">，用于描述</span><span class="nx">cookie的作用域</span><span class="err">，表示包含了哪些查询，默认情况下，</span><span class="nx">domain来自于URI中的主机名</span><span class="err">。</span> <span class="p">(</span><span class="mi">3</span><span class="p">)</span><span class="err">后面两项</span><span class="s1">&#39;Send for&#39;</span><span class="nx">and</span><span class="s1">&#39;Accessible to script&#39;</span><span class="err">在内部被称为</span><span class="nx">Secure和HttpOnly</span><span class="err">，其值为布尔值，分别用于设置是否只是接受</span><span class="nx">HTTPS连接或者是否接受JavaScript在网页端运行</span><span class="err">。</span>  
+<span class="p">(</span><span class="mi">4</span><span class="p">)</span><span class="err">最后两项</span><span class="nx">Created和Expires用于确定cookie的创建和失效时间</span><span class="err">，其中</span><span class="nx">Expires的设置也等同于Max</span><span class="o">-</span><span class="nx">Age域的设置</span><span class="err">，如果不设置</span><span class="nx">Expires或者Max</span><span class="o">-</span><span class="nx">Age</span><span class="err">，则表示</span><span class="nx">cookie在浏览器关闭时失效</span><span class="err">。</span>  
+<span class="mi">3</span><span class="p">.</span><span class="err">在</span><span class="nx">python中使用cookie</span>  
+<span class="err">虽然在浏览器中查看和修改</span><span class="nx">cookie是困难的</span><span class="err">，但是用户还是有可能修改</span><span class="nx">cookie的值</span><span class="err">，一些高级开发包，例如</span><span class="nx">Flask</span><span class="p">(</span><span class="nx">Python</span><span class="p">)</span><span class="err">框架或</span><span class="nx">Rails</span><span class="p">(</span><span class="nx">Ruby</span><span class="p">)</span><span class="err">框架可以对</span><span class="nx">cookie的内容进行加密</span><span class="err">，使得用户无法修改它，因为在一些高安全应用中，</span><span class="nx">cookie时常被用于存储session</span> <span class="nx">ID</span><span class="p">,</span><span class="err">其中可能保存了服务器端的关键用户数据库信息。</span>  
+<span class="err">另外，假如需要将</span><span class="nx">cookie的内容以HTML的形式显示出来</span><span class="err">，那么可能要注意其中出现</span><span class="nx">HTML字符</span><span class="err">，可以使用</span><span class="nx">Python的html</span><span class="p">.</span><span class="nx">escape方法来进行处理</span><span class="err">。</span>  
+<span class="err">更多关于</span><span class="nx">cookie在Python中的应用可以查看以下文档</span><span class="err">：</span>  
+<span class="nx">https</span><span class="o">:</span><span class="c1">//docs.python.org/3/library/http.cookies.html  </span>
+<span class="err">以下为一个示例如代码</span><span class="nx">CookieServer</span><span class="p">.</span><span class="nx">py</span><span class="err">：</span>  
+<span class="s1">&#39;&#39;&#39;  </span>
+<span class="s1">#!/usr/bin/env python3</span>
+<span class="s1">#</span>
+<span class="s1"># An HTTP server that remembers your name (in a cookie)</span>
+<span class="s1">#</span>
+<span class="s1"># In this exercise, you&#39;</span><span class="nx">ll</span> <span class="nx">create</span> <span class="nx">and</span> <span class="nx">read</span> <span class="nx">a</span> <span class="nx">cookie</span> <span class="nx">to</span> <span class="nx">remember</span> <span class="nx">the</span> <span class="nx">name</span>
+<span class="err">#</span> <span class="nx">that</span> <span class="nx">the</span> <span class="nx">user</span> <span class="nx">submits</span> <span class="k">in</span> <span class="nx">a</span> <span class="nx">form</span><span class="p">.</span>  <span class="nx">There</span> <span class="nx">are</span> <span class="nx">two</span> <span class="nx">things</span> <span class="k">for</span> <span class="nx">you</span> <span class="nx">to</span> <span class="k">do</span> <span class="nx">here</span><span class="o">:</span>
+<span class="err">#</span>
+<span class="err">#</span> <span class="mi">1</span><span class="p">.</span> <span class="nx">Set</span> <span class="nx">the</span> <span class="nx">relevant</span> <span class="nx">fields</span> <span class="nx">of</span> <span class="nx">the</span> <span class="nx">cookie</span>:  <span class="kt">its</span> <span class="nx">value</span><span class="p">,</span> <span class="nx">domain</span><span class="p">,</span> <span class="nx">and</span> <span class="nx">max</span><span class="o">-</span><span class="nx">age</span><span class="p">.</span>
+<span class="err">#</span>
+<span class="err">#</span> <span class="mi">2</span><span class="p">.</span> <span class="nx">Read</span> <span class="nx">the</span> <span class="nx">cookie</span> <span class="nx">value</span> <span class="nx">into</span> <span class="nx">a</span> <span class="nx">variable</span><span class="p">.</span>
+
+<span class="nx">from</span> <span class="nx">http</span><span class="p">.</span><span class="nx">server</span> <span class="kr">import</span> <span class="nx">HTTPServer</span><span class="p">,</span> <span class="nx">BaseHTTPRequestHandler</span>
+<span class="nx">from</span> <span class="nx">http</span> <span class="kr">import</span> <span class="nx">cookies</span>
+<span class="nx">from</span> <span class="nx">urllib</span><span class="p">.</span><span class="nx">parse</span> <span class="kr">import</span> <span class="nx">parse_qs</span>
+<span class="nx">from</span> <span class="nx">html</span> <span class="kr">import</span> <span class="nx">escape</span> <span class="kr">as</span> <span class="nx">html_escape</span>
+
+<span class="nx">form</span> <span class="o">=</span> <span class="s1">&#39;&#39;&#39;&amp;lt;!DOCTYPE html&amp;gt;</span>
+<span class="s1">    &amp;lt;title&amp;gt;I Remember You&amp;lt;/title&amp;gt;</span>
+<span class="s1">    &amp;lt;p&amp;gt;</span>
+<span class="s1">    {}</span>
+<span class="s1">    &amp;lt;p&amp;gt;</span>
+<span class="s1">    &amp;lt;form method=&quot;POST&quot;&amp;gt;</span>
+<span class="s1">        &amp;lt;label&amp;gt;What&#39;</span><span class="nx">s</span> <span class="nx">your</span> <span class="nx">name</span> <span class="nx">again</span><span class="o">?</span>
+        <span class="o">&amp;</span><span class="nx">lt</span><span class="p">;</span><span class="nx">input</span> <span class="nx">type</span><span class="o">=</span><span class="s2">&quot;text&quot;</span> <span class="nx">name</span><span class="o">=</span><span class="s2">&quot;yourname&quot;</span><span class="o">&amp;</span><span class="nx">gt</span><span class="p">;</span>
+    <span class="o">&amp;</span><span class="nx">lt</span><span class="p">;</span><span class="err">/label&amp;gt;</span>
+    <span class="o">&amp;</span><span class="nx">lt</span><span class="p">;</span><span class="nx">br</span><span class="o">&amp;</span><span class="nx">gt</span><span class="p">;</span>
+    <span class="o">&amp;</span><span class="nx">lt</span><span class="p">;</span><span class="nx">button</span> <span class="nx">type</span><span class="o">=</span><span class="s2">&quot;submit&quot;</span><span class="o">&amp;</span><span class="nx">gt</span><span class="p">;</span><span class="nx">Tell</span> <span class="nx">me</span><span class="o">!&amp;</span><span class="nx">lt</span><span class="p">;</span><span class="err">/button&amp;gt;</span>
+    <span class="o">&amp;</span><span class="nx">lt</span><span class="p">;</span><span class="err">/form&amp;gt;</span>
+<span class="s1">&#39;&#39;&#39;</span>
+
+
+<span class="s1">class NameHandler(BaseHTTPRequestHandler):</span>
+<span class="s1">    def do_POST(self):</span>
+<span class="s1">        # How long was the post data?</span>
+<span class="s1">        length = int(self.headers.get(&#39;</span><span class="nx">Content</span><span class="o">-</span><span class="nx">length</span><span class="s1">&#39;, 0))</span>
+
+<span class="s1">        # Read and parse the post data</span>
+<span class="s1">        data = self.rfile.read(length).decode()</span>
+<span class="s1">        yourname = parse_qs(data)[&quot;yourname&quot;][0]</span>
+
+<span class="s1">        # Create cookie.</span>
+<span class="s1">        c = cookies.SimpleCookie()</span>
+
+<span class="s1">        # 1. Set the fields of the cookie.</span>
+<span class="s1">        #    Give the cookie a value from the &#39;</span><span class="nx">yourname</span><span class="s1">&#39; variable,</span>
+<span class="s1">        #    a domain (localhost), and a max-age.</span>
+<span class="s1">        c[&#39;</span><span class="nx">yourname</span><span class="s1">&#39;]=yourname</span>
+<span class="s1">        c[&#39;</span><span class="nx">yourname</span><span class="s1">&#39;][&#39;</span><span class="nx">domain</span><span class="s1">&#39;]=&#39;</span><span class="nx">localhost</span><span class="s1">&#39;</span>
+<span class="s1">        c[&#39;</span><span class="nx">yourname</span><span class="s1">&#39;][&#39;</span><span class="nx">max</span><span class="o">-</span><span class="nx">age</span><span class="s1">&#39;]=600</span>
+<span class="s1">        # Send a 303 back to the root page, with a cookie!</span>
+<span class="s1">        self.send_response(303)  # redirect via GET</span>
+<span class="s1">        self.send_header(&#39;</span><span class="nx">Location</span><span class="s1">&#39;, &#39;</span><span class="o">/</span><span class="s1">&#39;)</span>
+<span class="s1">        self.send_header(&#39;</span><span class="nx">Set</span><span class="o">-</span><span class="nx">Cookie</span><span class="s1">&#39;, c[&#39;</span><span class="nx">yourname</span><span class="s1">&#39;].OutputString())</span>
+<span class="s1">        self.end_headers()</span>
+
+<span class="s1">    def do_GET(self):</span>
+<span class="s1">        # Default message if we don&#39;</span><span class="nx">t</span> <span class="nx">know</span> <span class="nx">a</span> <span class="nx">name</span><span class="p">.</span>
+        <span class="nx">message</span> <span class="o">=</span> <span class="s2">&quot;I don&#39;t know you yet!&quot;</span>
+
+        <span class="err">#</span> <span class="nx">Look</span> <span class="k">for</span> <span class="nx">a</span> <span class="nx">cookie</span> <span class="k">in</span> <span class="nx">the</span> <span class="nx">request</span><span class="p">.</span>
+        <span class="k">if</span> <span class="s1">&#39;cookie&#39;</span> <span class="k">in</span> <span class="nx">self.headers</span>:
+            <span class="kt">try</span><span class="o">:</span>
+                <span class="err">#</span> <span class="mi">2</span><span class="p">.</span> <span class="nx">Extract</span> <span class="nx">and</span> <span class="nx">decode</span> <span class="nx">the</span> <span class="nx">cookie</span><span class="p">.</span>
+                <span class="err">#</span>    <span class="nx">Get</span> <span class="nx">the</span> <span class="nx">cookie</span> <span class="nx">from</span> <span class="nx">the</span> <span class="nx">headers</span> <span class="nx">and</span> <span class="nx">extract</span> <span class="nx">its</span> <span class="nx">value</span>
+                <span class="err">#</span>    <span class="nx">into</span> <span class="nx">a</span> <span class="nx">variable</span> <span class="nx">called</span> <span class="s1">&#39;name&#39;</span><span class="p">.</span>
+                <span class="nx">in_c</span><span class="o">=</span><span class="nx">cookies</span><span class="p">.</span><span class="nx">SimpleCookie</span><span class="p">(</span><span class="nx">self</span><span class="p">.</span><span class="nx">headers</span><span class="p">[</span><span class="s1">&#39;Cookie&#39;</span><span class="p">])</span>
+                <span class="nx">name</span><span class="o">=</span><span class="nx">in_c</span><span class="p">[</span><span class="s1">&#39;yourname&#39;</span><span class="p">].</span><span class="nx">value</span>
+                <span class="err">#</span> <span class="nx">Craft</span> <span class="nx">a</span> <span class="nx">message</span><span class="p">,</span> <span class="nx">escaping</span> <span class="nx">any</span> <span class="nx">HTML</span> <span class="nx">special</span> <span class="nx">chars</span> <span class="k">in</span> <span class="nx">name</span><span class="p">.</span>
+                <span class="nx">message</span> <span class="o">=</span> <span class="s2">&quot;Hey there, &quot;</span> <span class="o">+</span> <span class="nx">html_escape</span><span class="p">(</span><span class="nx">name</span><span class="p">)</span>
+            <span class="nx">except</span> <span class="p">(</span><span class="nx">KeyError</span><span class="p">,</span> <span class="nx">cookies</span><span class="p">.</span><span class="nx">CookieError</span><span class="p">)</span> <span class="kr">as</span> <span class="nx">e</span>:
+                <span class="kt">message</span> <span class="o">=</span> <span class="s2">&quot;I&#39;m not sure who you are!&quot;</span>
+                <span class="nx">print</span><span class="p">(</span><span class="nx">e</span><span class="p">)</span>
+
+        <span class="err">#</span> <span class="nx">First</span><span class="p">,</span> <span class="nx">send</span> <span class="nx">a</span> <span class="mi">200</span> <span class="nx">OK</span> <span class="nx">response</span><span class="p">.</span>
+        <span class="nx">self</span><span class="p">.</span><span class="nx">send_response</span><span class="p">(</span><span class="mi">200</span><span class="p">)</span>
+
+        <span class="err">#</span> <span class="nx">Then</span> <span class="nx">send</span> <span class="nx">headers</span><span class="p">.</span>
+        <span class="nx">self</span><span class="p">.</span><span class="nx">send_header</span><span class="p">(</span><span class="s1">&#39;Content-type&#39;</span><span class="p">,</span> <span class="s1">&#39;text/html; charset=utf-8&#39;</span><span class="p">)</span>
+        <span class="nx">self</span><span class="p">.</span><span class="nx">end_headers</span><span class="p">()</span>
+
+        <span class="err">#</span> <span class="nx">Send</span> <span class="nx">the</span> <span class="nx">form</span> <span class="kd">with</span> <span class="nx">the</span> <span class="nx">message</span> <span class="k">in</span> <span class="nx">it</span><span class="p">.</span>
+        <span class="nx">mesg</span> <span class="o">=</span> <span class="nx">form</span><span class="p">.</span><span class="nx">format</span><span class="p">(</span><span class="nx">message</span><span class="p">)</span>
+        <span class="nx">self</span><span class="p">.</span><span class="nx">wfile</span><span class="p">.</span><span class="nx">write</span><span class="p">(</span><span class="nx">mesg</span><span class="p">.</span><span class="nx">encode</span><span class="p">())</span>
+
+
+<span class="k">if</span> <span class="nx">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="o">:</span>
+    <span class="nx">server_address</span> <span class="o">=</span> <span class="p">(</span><span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="mi">8000</span><span class="p">)</span>
+    <span class="nx">httpd</span> <span class="o">=</span> <span class="nx">HTTPServer</span><span class="p">(</span><span class="nx">server_address</span><span class="p">,</span> <span class="nx">NameHandler</span><span class="p">)</span>
+    <span class="nx">httpd</span><span class="p">.</span><span class="nx">serve_forever</span><span class="p">()</span>
+<span class="s1">&#39;&#39;</span><span class="err">&#39;</span>
+<span class="err">注意其中在获取</span><span class="nx">header中的cookie时</span><span class="err">，可能引起</span><span class="nx">KeyError和http</span><span class="p">.</span><span class="nx">cookies</span><span class="p">.</span><span class="nx">CookieError</span><span class="err">，这里需要将其放入</span><span class="nx">try块中进行处理</span><span class="err">。</span>
+</pre></div>
+
+
+<p>二三DNS和cookie安全<br>
+    这里主要注意当DNS服务器被入侵后，其主机名对应的IP地址可能被篡改，造成客户端访问到虚假的服务器，客户可能获取用户的用户名和密码，从而造成安全隐患。<br>
+二四HTTPS<br>
+    HTTPS相对于HTTP指服务器和客户端以加密形式连接，其采用的标准加密协议称为TLS(https://en.wikipedia.org/wiki/Transport_Layer_Security)，其主要提供以下保护：<br>
+    1.所有客户端和服务器端的数据都经过加密传输，其数据只能由该客户端及服务器端读取。<br>
+    2.使客户端可以认证服务器端，例如当客户端访问www.udacity.com，客户端可以确定服务器发回的response确实来自于udacity的真实服务器。<br>
+    3.保护客户端及服务端数据传输的完整性，确保其在传输过程中不出现意外或者被篡改。<br>
+    注：TSL协议类似于更早的SSL协议，可以把SSL看作是TSL的早期版本。  </p>
+<p>二五TLS检查<br>
+    要在本地计算机查看TLS可以参考以下链接：<br>
+    Chrome:https://support.google.com/chrome/answer/95617<br>
+    Firefox:https://support.mozilla.org/en-US/kb/secure-website-certificate<br>
+    Safari:https://support.apple.com/zh-cn/guide/safari/sfri40697/mac<br>
+    这里以Chrome浏览器为例，当访问HTTPS网站时，可以看到在URI前面的一个锁标志，表明该连接是通过TLS协议保护，点击该标志可以查看到相关证书的详细信息，这里重点介绍一下TLS的一些概念：<br>
+    1.私钥及证书：<br>
+    TLS协议中的服务端配置了两个重要的数据：私钥及证书，私钥一直保存在服务器端，而证书将发送至每个连接的客户端，而每个证书中又包含了公钥，私钥和公钥之间匹配了类似暗号的数据加密算法，使得两者之间的数据加密成为可能。
+    而证书的发放是由证书认证机构CA进行发放，其功能类似于文书公证，证明其申明的主机名及IP地址的真实有效性。
+    关于如何通过公钥-私钥进行数据加密解密确保数据安全的详细信息可以参考以下链接：<br>
+    https://en.wikipedia.org/wiki/Public-key_cryptography<br>
+    2.TLS如何实现认证：<br>
+    证书的作用就是保障其声明的某个服务，比如google.com其对应的资源不会错误的指向其它机构或者组织，当你获得了google.com发送的证书后，其中包含了DNS域的官方认证信息，一旦客户端访问的主机名在DNS解析后的IP与证书中注册的地址不一致的时候，客户端将发出严重警告，确保客户端不会访问到虚假的服务。<br>
+    3.TLS如何确保数据完整性：<br>
+    TLS通过MAC机制确保传输数据的完整性，详细原理可以参考以下链接：<br>
+    https://en.wikipedia.org/wiki/Message_authentication_code  </p>
+<p>二六其它方法<br>
+    不同的HTTP方法都定义了其不同的用法，比如HTML中的submitting form总是由GET或者POST进行处理，但是在HTTP中，还有大量的数据是通过API的形式通过客户端应用进行处理，比如用JavaScript去访问这些API，所以这里就简单介绍一下HTTP中的其它方法的应用(主要用于API，供JavaSctipt直接访问)：<br>
+    1.PUT方法：<br>
+    该方法用于创建一个新的资源，其结果返回201状态，该方法成功后请求相同的URI将返回新创建的资源。<br>
+    注：PUT也可以用于更新资源，但是另外一个不通过JavaSctipt更新资源的方式是用POST方法，通过HTML更新。<br>
+    2.DELETE方法：<br>
+    顾名思义，该方法用于删除资源。<br>
+    3.PATCH方法：<br>
+    PATCH方法是一个新加入HTTP的方法，类似于git中的修补patching概念，对已经创建的资源进行修补，对其中如何组织和传输数据格式没有标准，一个常见的数据格式为JSON Patch，另一个是JSON Merge Patch，具体可以查看以下链接： 
+    http://jsonpatch.com/<br>
+    https://tools.ietf.org/html/rfc7386<br>
+    4.HEAD,OPTIONS,TRACE方法：<br>
+    这三个方法主要用于调试，其中HEAD方法类似于GET，但是只返回headers组件，不返回content；OPTIONS主要用于找出服务器支持的特性；TRACE方法用于回显服务器收到的客户端内容，但是因为安全原因经常被禁用。  </p>
+<div class="highlight"><pre><span></span>总之，HTTP的每个方法都有其规定的标准使用范围及方法，但是这些都不是强制性的，你可以在实际中不按照标准定义其行为，例如在GET方法中删除资源，但是这样可能造成意想不到的结果，所以一般来讲都需要按照其定义的标准方法来使用，更多详细信息可以参考以下链接：  
+https://www.w3.org/Protocols/rfc2616/rfc2616-sec9.html
+</pre></div>
+
+
+<p>二七HTTP/2<br>
+    新版本的HTTP协议被称为HTTP/2，这里不对其概念做累述，相关内容可以百度，这里只对其中的一些重要特性做简单介绍：<br>
+    1.测试HTTP/2：<br>
+    可以通过以下几个测试链接来测试HTTP/2的性能：<br>
+    https://http2.golang.org/gophertiles<br>
+    http://www.http2demo.io/<br>
+    https://http2.akamai.com/demo<br>
+    2.多链接：<br>
+    HTTP/1.1一般最多一次可以保持6个连接，但是同一时间只能有一个连接获取资源，其它连接只能等待，这造成了延迟，而HTTP/2则打破了这个限制，在同一时间可以发送多个连接，并且每个连接都可以在第一时间获得服务器的资源，这造成了HTTP/2的用户体验要远好于HTTP/1.1。
+    3.服务推送<br>
+    HTTP/2还支持主动推送，如果客户端请求了某个资源，并且服务器知道它还会请求相关其它资源，则服务器不会等待客户端再次请求再发送，而是在第一次请求后就主动推送相关资源。<br>
+    更多HTTP/2的内容可以参考以下链接：<br>
+    https://http2.github.io/faq/<br>
+二八更多资源：<br>
+    1.HTTP官方教程及相关资源：<br>
+    https://developer.mozilla.org/en-US/docs/Web/HTTP<br>
+    2.HTTP/1.1标准文档：<br>
+    https://tools.ietf.org/html/rfc7230<br>
+    3.HTTP/2标准文档：<br>
+    https://http2.github.io/<br>
+    4.HTTPS教程：<br>
+    https://letsencrypt.org/<br>
+    5.Chrome浏览器插件，用于查看每个request的headers和information:  <br>
+    https://chrome.google.com/webstore/detail/http-header-spy/agnoocojkneiphkobpcfoaenhpjnmifb?hl=en  </p>
+<p>全栈基础学习笔记：<br>
+    这里首先对学习的准备工作做说明：<br>
+    1.预备知识包括python基础及面向对象编程，SQL基础，HTML&amp;CSS基础，Sell基础，git基础。各部分预备知识可以参考我提供的相关学习笔记。
+    2.预备环境是安装git,virual Box,Vagrant，相关软件的安装可以查看我提供的相关学习笔记。<br>
+    3.课程资源的下载：<br>
+    fork地址：https://github.com/udacity/fullstack-nanodegree-vm<br>
+    fork后在本地git bash运行以下命令：<br>
+    git clone http://github.com/username/fullstack-nanodegree-vmfullstack<br>
+    其中将username替换为你自己的git用户名<br>
+    4.启动环境：<br>
+    进入fullstack/vagrant目录运行vagrant up启动虚拟机，再运行vagrant ssh登陆虚拟机后即完成准备工作，所有后续课程都将在该虚拟环境中进行运行及操作。  </p>
+<p>一  CRUD：<br>
+    CRUD是create,read,update,delete的首字母大写，含义自行百度。<br>
+二  SQL：<br>
+    请参考《关系型数据库入门学习笔记》，其对应CRUD的语句分别是INSERT INTO,SELECT,UPDATE,DELETE<br>
+三  ORM：<br>
+    这里不做概念的介绍，直接介绍python开源ORM库：SQLAlchemy链接地址如下：<br>
+    https://www.sqlalchemy.org/<br>
+    1.配置数据库示例database_setup.py:<br>
+    代码由四部分组件构成：
+    a. 配置代码：<br>
+    配置代码在整个项目中都不会有什么变动<br>
+    在文件开始部分导入必要的模块并创建一个declarative base实例，在文件结尾处创建数据库并连接，然后向数据库中创建表格及相关列：<br>
+    '''
+    ####################At the begening##########
+    import sys  </p>
+<div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">sqlalchemy</span> <span class="kn">import</span> <span class="n">Column</span><span class="p">,</span><span class="n">ForeignKey</span><span class="p">,</span><span class="n">Integer</span><span class="p">,</span><span class="n">String</span>
+
+<span class="kn">from</span> <span class="nn">sqlalchemy.ext.declarative</span> <span class="kn">import</span> <span class="n">declarative_base</span>  
+<span class="kn">from</span> <span class="nn">sqlalchemy.orm</span> <span class="kn">import</span> <span class="n">relationship</span>  
+<span class="kn">from</span> <span class="nn">sqlalchemy</span> <span class="kn">import</span> <span class="n">create_enjine</span>
+
+<span class="n">Base</span><span class="o">=</span><span class="n">declarative_base</span><span class="p">()</span>  
+<span class="c1">###########insert at end of file#########  </span>
+<span class="n">engine</span> <span class="o">=</span> <span class="n">create_engine</span><span class="p">(</span><span class="s1">&#39;sqlite:///restaurantmenu.db&#39;</span><span class="p">)</span>
+
+<span class="n">Base</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">create_all</span><span class="p">(</span><span class="n">engine</span><span class="p">)</span>
+<span class="sd">&#39;&#39;&#39;  </span>
+<span class="sd">b.类代码：  </span>
+<span class="sd">用于将表格表示为python类，建立起类和数据表之间的关联，扩展Base类，并部署表格和映射代码：  </span>
+<span class="sd">&#39;&#39;&#39;</span>  
+<span class="k">class</span> <span class="nc">Restaurant</span><span class="p">(</span><span class="n">Base</span><span class="p">):</span>  
+    <span class="c1">#表格代码  </span>
+    <span class="n">__tablename__</span> <span class="o">=</span> <span class="s1">&#39;restaurant&#39;</span>  
+    <span class="c1">#映射代码  </span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">String</span><span class="p">(</span><span class="mi">80</span><span class="p">),</span><span class="n">nullable</span> <span class="o">=</span> <span class="bp">False</span><span class="p">)</span>
+    <span class="nb">id</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">Integer</span><span class="p">,</span><span class="n">primary_key</span> <span class="o">=</span> <span class="bp">True</span><span class="p">)</span>  
+<span class="k">class</span> <span class="nc">MenuItem</span><span class="p">(</span><span class="n">Base</span><span class="p">):</span>  
+    <span class="c1">#表格代码  </span>
+    <span class="n">__tablename__</span> <span class="o">=</span> <span class="s1">&#39;menu_item&#39;</span>  
+    <span class="c1">#映射代码  </span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">String</span><span class="p">(</span><span class="mi">80</span><span class="p">),</span><span class="n">nullable</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>  
+    <span class="nb">id</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">Integer</span><span class="p">,</span><span class="n">primary_key</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+
+    <span class="n">course</span><span class="o">=</span><span class="n">Column</span><span class="p">(</span><span class="n">String</span><span class="p">(</span><span class="mi">250</span><span class="p">))</span>  
+    <span class="n">description</span><span class="o">=</span><span class="n">Column</span><span class="p">(</span><span class="n">String</span><span class="p">(</span><span class="mi">250</span><span class="p">))</span>  
+    <span class="n">price</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">String</span><span class="p">(</span><span class="mi">8</span><span class="p">))</span>  
+    <span class="n">restaurant_id</span><span class="o">=</span><span class="n">Column</span><span class="p">(</span><span class="n">Integer</span><span class="p">,</span><span class="n">ForeignKey</span><span class="p">(</span><span class="s1">&#39;restaurant.id&#39;</span><span class="p">))</span>  
+    <span class="n">restaurant</span> <span class="o">=</span> <span class="n">relationship</span><span class="p">(</span><span class="n">Restaurant</span><span class="p">)</span>  
+<span class="sd">&#39;&#39;&#39;  </span>
+<span class="sd">c.表格代码：  </span>
+<span class="sd">主要在类代码中将数据库中的表格进行呈现，语法结构：__tablename__=&#39;some_table&#39;，示例代码写入b部分的类代码中(注：表格代码中的数据库表格名要用小写字母，空格用下划线表示。)：  </span>
+<span class="sd">d.映射代码：  </span>
+<span class="sd">主要在类代码中将数据表格中的列进行映射，语法结构：columnName = Column(attributes,...) attributes示例：  </span>
+<span class="sd">Strint(250)  </span>
+<span class="sd">Integer  </span>
+<span class="sd">relationship(Class)  </span>
+<span class="sd">nullable=False  </span>
+<span class="sd">primary key = True  </span>
+<span class="sd">ForeignKey(&#39;some_table.id&#39;)  </span>
+<span class="sd">，示例代码写入b部分的类代码中：  </span>
+<span class="sd">将四个组件代码整合后如下：  </span>
+<span class="sd">&#39;&#39;&#39;</span>  
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">from</span> <span class="nn">sqlalchemy</span> <span class="kn">import</span> <span class="n">Column</span><span class="p">,</span> <span class="n">ForeignKey</span><span class="p">,</span> <span class="n">Integer</span><span class="p">,</span> <span class="n">String</span>
+<span class="kn">from</span> <span class="nn">sqlalchemy.ext.declarative</span> <span class="kn">import</span> <span class="n">declarative_base</span>
+<span class="kn">from</span> <span class="nn">sqlalchemy.orm</span> <span class="kn">import</span> <span class="n">relationship</span>
+<span class="kn">from</span> <span class="nn">sqlalchemy</span> <span class="kn">import</span> <span class="n">create_engine</span>
+
+<span class="n">Base</span> <span class="o">=</span> <span class="n">declarative_base</span><span class="p">()</span>
+
+<span class="k">class</span> <span class="nc">Restaurant</span><span class="p">(</span><span class="n">Base</span><span class="p">):</span>
+   <span class="n">__tablename__</span> <span class="o">=</span> <span class="s1">&#39;restaurant&#39;</span>
+
+   <span class="nb">id</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">Integer</span><span class="p">,</span> <span class="n">primary_key</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+   <span class="n">name</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">String</span><span class="p">(</span><span class="mi">250</span><span class="p">),</span> <span class="n">nullable</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">MenuItem</span><span class="p">(</span><span class="n">Base</span><span class="p">):</span>
+   <span class="n">__tablename__</span> <span class="o">=</span> <span class="s1">&#39;menu_item&#39;</span>
+
+
+   <span class="n">name</span> <span class="o">=</span><span class="n">Column</span><span class="p">(</span><span class="n">String</span><span class="p">(</span><span class="mi">80</span><span class="p">),</span> <span class="n">nullable</span> <span class="o">=</span> <span class="bp">False</span><span class="p">)</span>
+   <span class="nb">id</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">Integer</span><span class="p">,</span> <span class="n">primary_key</span> <span class="o">=</span> <span class="bp">True</span><span class="p">)</span>
+   <span class="n">description</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">String</span><span class="p">(</span><span class="mi">250</span><span class="p">))</span>
+   <span class="n">price</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">String</span><span class="p">(</span><span class="mi">8</span><span class="p">))</span>
+   <span class="n">course</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">String</span><span class="p">(</span><span class="mi">250</span><span class="p">))</span>
+   <span class="n">restaurant_id</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">Integer</span><span class="p">,</span><span class="n">ForeignKey</span><span class="p">(</span><span class="s1">&#39;restaurant.id&#39;</span><span class="p">))</span>
+   <span class="n">restaurant</span> <span class="o">=</span> <span class="n">relationship</span><span class="p">(</span><span class="n">Restaurant</span><span class="p">)</span>
+
+<span class="c1">#We added this serialize function to be able to send JSON objects in a serializable format</span>
+   <span class="nd">@property</span>
+   <span class="k">def</span> <span class="nf">serialize</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+   <span class="k">return</span> <span class="p">{</span>
+       <span class="s1">&#39;name&#39;</span>         <span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+       <span class="s1">&#39;description&#39;</span>         <span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">description</span><span class="p">,</span>
+       <span class="s1">&#39;id&#39;</span>         <span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">,</span>
+       <span class="s1">&#39;price&#39;</span>         <span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">price</span><span class="p">,</span>
+       <span class="s1">&#39;course&#39;</span>         <span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">course</span><span class="p">,</span>
+   <span class="p">}</span>
+
+
+<span class="n">engine</span> <span class="o">=</span> <span class="n">create_engine</span><span class="p">(</span><span class="s1">&#39;sqlite:///restaurantmenu.db&#39;</span><span class="p">)</span>
+
+
+<span class="n">Base</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">create_all</span><span class="p">(</span><span class="n">engine</span><span class="p">)</span>  
+<span class="s1">&#39;&#39;&#39;</span>
+</pre></div>
+
+
 <p>Web网络基础学习笔记：<br>
     首先需要熟悉一些术语包括：HTTP,TCP,IP,HARDWARE另外需要熟悉SSH,COMMANDLINE,LINUXSHELL等。<br>
 一  学习环境设置<br>
